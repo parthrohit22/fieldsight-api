@@ -1,3 +1,5 @@
+import 'dotenv/config';
+
 import express from "express";
 import cors from "cors";
 
@@ -8,8 +10,11 @@ import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { initializeCosmos } from "./services/cosmosService.js";
 import { initializeBlobContainer } from "./services/blobService.js";
 
+/* ================= APPLICATION INSIGHTS ================= */
+
 async function setupApplicationInsights() {
   if (!config.applicationInsightsConnectionString) {
+    console.log("Application Insights not configured");
     return;
   }
 
@@ -34,10 +39,15 @@ async function setupApplicationInsights() {
   console.log("Application Insights initialized");
 }
 
+/* ================= EXPRESS APP ================= */
+
 const app = express();
 
 const corsOptions = {
-  origin: config.corsOrigin === "*" ? "*" : config.corsOrigin.split(",").map((origin) => origin.trim()),
+  origin:
+    config.corsOrigin === "*"
+      ? "*"
+      : config.corsOrigin.split(",").map((origin) => origin.trim()),
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "x-api-key"],
 };
@@ -45,10 +55,13 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json({ limit: config.jsonBodyLimit }));
 
+/* ================= PUBLIC ROUTES ================= */
+
 app.get("/", (req, res) => {
   res.status(200).json({
     service: "FieldSight API",
     status: "running",
+    environment: config.nodeEnv,
   });
 });
 
@@ -59,24 +72,30 @@ app.get("/health", (req, res) => {
   });
 });
 
+/* ================= PROTECTED ROUTES ================= */
+
 app.use("/", authenticateApiKey, recordsRouter);
+
+/* ================= ERROR HANDLING ================= */
 
 app.use(notFoundHandler);
 app.use(errorHandler);
 
+/* ================= START SERVER ================= */
+
 async function startServer() {
   try {
     await setupApplicationInsights();
-    await Promise.all([initializeCosmos(), initializeBlobContainer()]);
+
+    await initializeCosmos();
+    await initializeBlobContainer();
 
     app.listen(config.port, () => {
       console.log(`FieldSight API listening on port ${config.port}`);
     });
   } catch (error) {
-    console.error("Failed to start FieldSight API", {
-      message: error.message,
-      stack: error.stack,
-    });
+    console.error("Failed to start FieldSight API");
+    console.error(error);
     process.exit(1);
   }
 }
