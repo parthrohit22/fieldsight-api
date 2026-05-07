@@ -7,6 +7,7 @@ import { deleteBlob, uploadBlob } from "../services/blobService.js";
 import {
   createRecord,
   deleteRecord,
+  findRecordById,
   getAllRecords,
   getRecord,
   updateRecord,
@@ -54,6 +55,28 @@ function optionalQueryString(query, fieldName) {
   }
 
   return value.trim();
+}
+
+function parsePaginationQuery(query) {
+  const limitRaw = query.limit ?? "20";
+  const offsetRaw = query.offset ?? "0";
+
+  if (Array.isArray(limitRaw) || !/^\d+$/.test(String(limitRaw))) {
+    throw new AppError("limit must be an integer between 1 and 100", 400, "INVALID_PAGINATION");
+  }
+
+  if (Array.isArray(offsetRaw) || !/^\d+$/.test(String(offsetRaw))) {
+    throw new AppError("offset must be an integer greater than or equal to 0", 400, "INVALID_PAGINATION");
+  }
+
+  const limit = Number(limitRaw);
+  const offset = Number(offsetRaw);
+
+  if (limit < 1 || limit > 100) {
+    throw new AppError("limit must be an integer between 1 and 100", 400, "INVALID_PAGINATION");
+  }
+
+  return { limit, offset };
 }
 
 function buildBlobUrl(blobPath) {
@@ -104,7 +127,10 @@ router.post("/upload", async (req, res) => {
 
   try {
     const createdRecord = await createRecord(record);
-    return res.status(201).json(createdRecord);
+    return res.status(201).json({
+      success: true,
+      data: formatRecordResponse(createdRecord),
+    });
   } catch (error) {
     await deleteBlob(file.blobPath).catch((cleanupError) => {
       console.error("Failed to clean up blob after Cosmos create failure", {
@@ -121,9 +147,19 @@ router.get("/records", async (req, res) => {
   const filters = {
     projectID: optionalQueryString(req.query, "projectID"),
     category: optionalQueryString(req.query, "category"),
+    researcherID: optionalQueryString(req.query, "researcherID"),
   };
-  const records = await getAllRecords(filters);
-  return res.status(200).json(records.map(formatRecordResponse));
+  const pagination = parsePaginationQuery(req.query);
+  const records = await getAllRecords(filters, pagination);
+  const data = records.map(formatRecordResponse);
+
+  return res.status(200).json({
+    success: true,
+    count: data.length,
+    limit: pagination.limit,
+    offset: pagination.offset,
+    data,
+  });
 });
 
 router.delete("/records/:id", async (req, res) => {
@@ -131,17 +167,32 @@ router.delete("/records/:id", async (req, res) => {
 
   const id = req.params.id;
   const projectID = requireString(req.body, "projectID");
+  const researcherID = requireString(req.body, "researcherID");
   const record = await getRecord(id, projectID);
+
+  if (record.researcherID !== researcherID) {
+    throw new AppError("Forbidden", 403);
+  }
 
   await deleteBlob(record.file?.blobPath);
   await deleteRecord(id, projectID);
 
-  return res.status(204).send();
+  return res.status(200).json({
+    success: true,
+    message: "Record deleted",
+  });
 });
 
 router.put("/records/:id", async (req, res) => {
   requireBodyObject(req.body);
-  rejectUnsupportedFields(req.body, ["category", "projectID"]);
+  rejectUnsupportedFields(req.body, ["category", "projectID", "researcherID"]);
+
+  const researcherID = requireString(req.body, "researcherID");
+  const existingRecord = await findRecordById(req.params.id);
+
+  if (existingRecord.researcherID !== researcherID) {
+    throw new AppError("Forbidden", 403);
+  }
 
   const updates = {};
 
@@ -158,7 +209,10 @@ router.put("/records/:id", async (req, res) => {
   }
 
   const updatedRecord = await updateRecord(req.params.id, updates);
-  return res.status(200).json(updatedRecord);
+  return res.status(200).json({
+    success: true,
+    data: formatRecordResponse(updatedRecord),
+  });
 });
 
 export default router;

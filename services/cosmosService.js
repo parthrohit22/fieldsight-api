@@ -49,9 +49,11 @@ export async function createRecord(record) {
   return resource;
 }
 
-export async function getAllRecords(filters = {}) {
+export async function getAllRecords(filters = {}, pagination = {}) {
   const conditions = [];
   const parameters = [];
+  const limit = pagination.limit ?? 20;
+  const offset = pagination.offset ?? 0;
 
   if (filters.projectID) {
     conditions.push("c.projectID = @projectID");
@@ -63,10 +65,20 @@ export async function getAllRecords(filters = {}) {
     parameters.push({ name: "@category", value: filters.category });
   }
 
+  if (filters.researcherID) {
+    conditions.push("c.researcherID = @researcherID");
+    parameters.push({ name: "@researcherID", value: filters.researcherID });
+  }
+
+  parameters.push(
+    { name: "@offset", value: offset },
+    { name: "@limit", value: limit },
+  );
+
   const whereClause = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
   const { resources } = await getContainer()
     .items.query({
-      query: `SELECT c.id, c.projectID, c.category, c.researcherID, c.captureTimestamp, c.file FROM c${whereClause}`,
+      query: `SELECT c.id, c.projectID, c.category, c.researcherID, c.captureTimestamp, c.file FROM c${whereClause} OFFSET @offset LIMIT @limit`,
       parameters,
     }, {
       enableCrossPartitionQuery: true,
