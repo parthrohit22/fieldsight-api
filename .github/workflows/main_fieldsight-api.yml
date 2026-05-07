@@ -112,11 +112,14 @@ jobs:
           unzip -l "${ZIP_PATH}" | grep -q "middleware/auth.js"
 
       - name: Deploy via Kudu ZipDeploy
+        env:
+          KUDU_USERNAME: ${{ secrets.AZURE_WEBAPP_USERNAME }}
+          KUDU_PASSWORD: ${{ secrets.AZURE_WEBAPP_PASSWORD }}
         run: |
           set -euo pipefail
           curl --fail --show-error --location \
             -X POST \
-            -u "${{ secrets.AZURE_WEBAPP_USERNAME }}:${{ secrets.AZURE_WEBAPP_PASSWORD }}" \
+            -u "${KUDU_USERNAME}:${KUDU_PASSWORD}" \
             -H "Content-Type: application/zip" \
             --data-binary @"deployment/${DEPLOY_ZIP}" \
             "${KUDU_ZIPDEPLOY_URL}"
