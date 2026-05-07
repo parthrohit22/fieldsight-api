@@ -150,11 +150,12 @@ router.get("/records", async (req, res) => {
     researcherID: optionalQueryString(req.query, "researcherID"),
   };
   const pagination = parsePaginationQuery(req.query);
-  const records = await getAllRecords(filters, pagination);
-  const data = records.map(formatRecordResponse);
+  const { resources, total } = await getAllRecords(filters, pagination);
+  const data = resources.map(formatRecordResponse);
 
   return res.status(200).json({
     success: true,
+    total,
     count: data.length,
     limit: pagination.limit,
     offset: pagination.offset,

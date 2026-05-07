@@ -70,6 +70,8 @@ export async function getAllRecords(
 ) {
   const conditions = [];
   const parameters = [];
+  const limit = pagination.limit ?? 20;
+  const offset = pagination.offset ?? 0;
 
   if (filters.projectID) {
     conditions.push("c.projectID = @projectID");
@@ -99,7 +101,8 @@ export async function getAllRecords(
     ? ` WHERE ${conditions.join(" AND ")}`
     : "";
 
-  const query = `
+  const countQuery = `SELECT VALUE COUNT(1) FROM c${whereClause}`;
+  const dataQuery = `
     SELECT
       c.id,
       c.projectID,
@@ -109,25 +112,41 @@ export async function getAllRecords(
       c.file
     FROM c
     ${whereClause}
+    OFFSET @offset LIMIT @limit
   `;
 
-  const { resources } = await getContainer()
+  const { resources: countResources } = await getContainer()
     .items.query(
       {
-        query,
+        query: countQuery,
         parameters,
       },
       {
         enableCrossPartitionQuery: true,
-        maxItemCount: pagination.limit + pagination.offset,
       }
     )
     .fetchAll();
 
-  return resources.slice(
-    pagination.offset,
-    pagination.offset + pagination.limit
-  );
+  const { resources } = await getContainer()
+    .items.query(
+      {
+        query: dataQuery,
+        parameters: [
+          ...parameters,
+          { name: "@offset", value: offset },
+          { name: "@limit", value: limit },
+        ],
+      },
+      {
+        enableCrossPartitionQuery: true,
+      }
+    )
+    .fetchAll();
+
+  return {
+    resources: resources.map(stripSystemFields),
+    total: countResources[0] ?? 0,
+  };
 }
 
 /* ================= GET SINGLE ================= */
