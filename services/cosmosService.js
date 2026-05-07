@@ -1,5 +1,4 @@
 import { CosmosClient } from "@azure/cosmos";
-
 import config from "../config/env.js";
 import { AppError } from "../middleware/errorHandler.js";
 
@@ -12,10 +11,15 @@ let container;
 
 function getContainer() {
   if (!container) {
-    container = client.database(config.cosmos.databaseId).container(config.cosmos.containerId);
+    container = client
+      .database(config.cosmos.databaseId)
+      .container(config.cosmos.containerId);
   }
-
   return container;
+}
+
+function isNotFound(error) {
+  return error.code === 404 || error.statusCode === 404;
 }
 
 function stripSystemFields(record) {
@@ -23,37 +27,45 @@ function stripSystemFields(record) {
   return document;
 }
 
-function isNotFound(error) {
-  return error.code === 404 || error.statusCode === 404;
-}
-
 export async function initializeCosmos() {
   const { database } = await client.databases.createIfNotExists({
     id: config.cosmos.databaseId,
   });
 
-  const { container: initializedContainer } = await database.containers.createIfNotExists({
-    id: config.cosmos.containerId,
-    partitionKey: {
-      paths: [config.cosmos.partitionKey],
-    },
-  });
+  const { container: initializedContainer } =
+    await database.containers.createIfNotExists({
+      id: config.cosmos.containerId,
+      partitionKey: {
+        paths: [config.cosmos.partitionKey],
+      },
+    });
 
   container = initializedContainer;
-  console.log(`Cosmos DB initialized: ${config.cosmos.databaseId}/${config.cosmos.containerId}`);
+
+  console.log(
+    `Cosmos DB initialized: ${config.cosmos.databaseId}/${config.cosmos.containerId}`
+  );
+
   return container;
 }
 
+/* ================= CREATE ================= */
+
 export async function createRecord(record) {
-  const { resource } = await getContainer().items.create(stripSystemFields(record));
+  const { resource } = await getContainer().items.create(
+    stripSystemFields(record)
+  );
   return resource;
 }
 
-export async function getAllRecords(filters = {}, pagination = {}) {
+/* ================= GET ALL (FILTER + PAGINATION) ================= */
+
+export async function getAllRecords(
+  filters = {},
+  pagination = { limit: 20, offset: 0 }
+) {
   const conditions = [];
   const parameters = [];
-  const limit = pagination.limit ?? 20;
-  const offset = pagination.offset ?? 0;
 
   if (filters.projectID) {
     conditions.push("c.projectID = @projectID");
@@ -70,23 +82,32 @@ export async function getAllRecords(filters = {}, pagination = {}) {
     parameters.push({ name: "@researcherID", value: filters.researcherID });
   }
 
-  parameters.push(
-    { name: "@offset", value: offset },
-    { name: "@limit", value: limit },
-  );
+  const whereClause = conditions.length
+    ? ` WHERE ${conditions.join(" AND ")}`
+    : "";
 
-  const whereClause = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
+  parameters.push({ name: "@offset", value: pagination.offset });
+  parameters.push({ name: "@limit", value: pagination.limit });
+
+  const query = `
+    SELECT c.id, c.projectID, c.category, c.researcherID, 
+           c.captureTimestamp, c.file
+    FROM c
+    ${whereClause}
+    OFFSET @offset LIMIT @limit
+  `;
+
   const { resources } = await getContainer()
-    .items.query({
-      query: `SELECT c.id, c.projectID, c.category, c.researcherID, c.captureTimestamp, c.file FROM c${whereClause} OFFSET @offset LIMIT @limit`,
-      parameters,
-    }, {
-      enableCrossPartitionQuery: true,
-    })
+    .items.query(
+      { query, parameters },
+      { enableCrossPartitionQuery: true }
+    )
     .fetchAll();
 
   return resources;
 }
+
+/* ================= GET SINGLE (PARTITION SAFE) ================= */
 
 export async function getRecord(id, projectID) {
   try {
@@ -101,19 +122,21 @@ export async function getRecord(id, projectID) {
     if (isNotFound(error)) {
       throw new AppError("Record not found", 404, "RECORD_NOT_FOUND");
     }
-
     throw error;
   }
 }
 
+/* ================= FIND BY ID (CROSS PARTITION) ================= */
+
 export async function findRecordById(id) {
   const { resources } = await getContainer()
-    .items.query({
-      query: "SELECT * FROM c WHERE c.id = @id",
-      parameters: [{ name: "@id", value: id }],
-    }, {
-      enableCrossPartitionQuery: true,
-    })
+    .items.query(
+      {
+        query: "SELECT * FROM c WHERE c.id = @id",
+        parameters: [{ name: "@id", value: id }],
+      },
+      { enableCrossPartitionQuery: true }
+    )
     .fetchAll();
 
   if (!resources.length) {
@@ -123,23 +146,37 @@ export async function findRecordById(id) {
   return resources[0];
 }
 
+/* ================= UPDATE ================= */
+
 export async function updateRecord(id, updates) {
   const existingRecord = await findRecordById(id);
+
   const updatedRecord = stripSystemFields({
     ...existingRecord,
     ...updates,
     id: existingRecord.id,
   });
 
-  if (updates.projectID && updates.projectID !== existingRecord.projectID) {
+  // Partition key change
+  if (
+    updates.projectID &&
+    updates.projectID !== existingRecord.projectID
+  ) {
     const { resource } = await getContainer().items.create(updatedRecord);
-    await getContainer().item(id, existingRecord.projectID).delete();
+    await getContainer()
+      .item(id, existingRecord.projectID)
+      .delete();
     return resource;
   }
 
-  const { resource } = await getContainer().item(id, existingRecord.projectID).replace(updatedRecord);
+  const { resource } = await getContainer()
+    .item(id, existingRecord.projectID)
+    .replace(updatedRecord);
+
   return resource;
 }
+
+/* ================= DELETE ================= */
 
 export async function deleteRecord(id, projectID) {
   try {
@@ -148,7 +185,6 @@ export async function deleteRecord(id, projectID) {
     if (isNotFound(error)) {
       throw new AppError("Record not found", 404, "RECORD_NOT_FOUND");
     }
-
     throw error;
   }
 }
