@@ -1,34 +1,122 @@
-name: Deploy FieldSight API
+name: Build and deploy Node.js app to Azure Web App - fieldsight-api
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "22.x"
+  DEPLOY_ZIP: fieldsight-api.zip
+  KUDU_ZIPDEPLOY_URL: https://fieldsight-api-gaf0fndvbhg2fshs.scm.swedencentral-01.azurewebsites.net/api/zipdeploy?isAsync=false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Show files before zipping
-        run: ls -la
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
-      - name: Create deployment zip
+      - name: Verify repository root
         run: |
-          zip -r app.zip . \
-            -x "*.git*" \
-            -x ".github/*" \
-            -x "node_modules/*"
+          set -euo pipefail
+          pwd
+          test -f package.json
+          test -f server.js
+          test -d routes
+          test -d services
+          test -d config
+          test -d middleware
+          find . -maxdepth 2 -type f | sort
 
-      - name: Show zip contents
-        run: unzip -l app.zip
-
-      - name: Deploy to Azure
+      - name: Install, build, and test
         run: |
-          curl -X POST \
+          set -euo pipefail
+          npm ci
+          npm run build --if-present
+          npm test --if-present
+
+      - name: Create deterministic deployment package
+        run: |
+          set -euo pipefail
+          PACKAGE_DIR="${RUNNER_TEMP}/fieldsight-package"
+          mkdir -p "${PACKAGE_DIR}"
+
+          git archive --format=tar HEAD -- . ":(exclude).github" | tar -x -C "${PACKAGE_DIR}"
+
+          echo "Deployment package root:"
+          find "${PACKAGE_DIR}" -maxdepth 3 -type f | sort
+
+          test -f "${PACKAGE_DIR}/package.json"
+          test -f "${PACKAGE_DIR}/server.js"
+          test -d "${PACKAGE_DIR}/routes"
+          test -d "${PACKAGE_DIR}/services"
+          test -d "${PACKAGE_DIR}/config"
+          test -d "${PACKAGE_DIR}/middleware"
+
+          cd "${PACKAGE_DIR}"
+          zip -r "${RUNNER_TEMP}/${DEPLOY_ZIP}" .
+
+      - name: Verify zip contents
+        run: |
+          set -euo pipefail
+          ZIP_PATH="${RUNNER_TEMP}/${DEPLOY_ZIP}"
+          unzip -l "${ZIP_PATH}"
+          unzip -l "${ZIP_PATH}" | grep -q "package.json"
+          unzip -l "${ZIP_PATH}" | grep -q "server.js"
+          unzip -l "${ZIP_PATH}" | grep -q "routes/records.js"
+          unzip -l "${ZIP_PATH}" | grep -q "services/cosmosService.js"
+          unzip -l "${ZIP_PATH}" | grep -q "config/env.js"
+          unzip -l "${ZIP_PATH}" | grep -q "middleware/auth.js"
+
+      - name: Upload artifact for deployment
+        uses: actions/upload-artifact@v4
+        with:
+          name: fieldsight-api-package
+          path: ${{ runner.temp }}/${{ env.DEPLOY_ZIP }}
+          if-no-files-found: error
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: production
+
+    steps:
+      - name: Download deployment artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fieldsight-api-package
+          path: deployment
+
+      - name: Verify downloaded artifact
+        run: |
+          set -euo pipefail
+          ZIP_PATH="deployment/${DEPLOY_ZIP}"
+          test -f "${ZIP_PATH}"
+          ls -la deployment
+          unzip -l "${ZIP_PATH}"
+          unzip -l "${ZIP_PATH}" | grep -q "package.json"
+          unzip -l "${ZIP_PATH}" | grep -q "server.js"
+          unzip -l "${ZIP_PATH}" | grep -q "routes/records.js"
+          unzip -l "${ZIP_PATH}" | grep -q "services/cosmosService.js"
+          unzip -l "${ZIP_PATH}" | grep -q "config/env.js"
+          unzip -l "${ZIP_PATH}" | grep -q "middleware/auth.js"
+
+      - name: Deploy via Kudu ZipDeploy
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --location \
+            -X POST \
             -u "${{ secrets.AZURE_WEBAPP_USERNAME }}:${{ secrets.AZURE_WEBAPP_PASSWORD }}" \
             -H "Content-Type: application/zip" \
-            --data-binary @app.zip \
-            https://fieldsight-api-gaf0fndvbhg2fshs.scm.swedencentral-01.azurewebsites.net/api/zipdeploy
+            --data-binary @"deployment/${DEPLOY_ZIP}" \
+            "${KUDU_ZIPDEPLOY_URL}"
