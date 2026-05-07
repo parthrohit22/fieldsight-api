@@ -28,7 +28,7 @@ async function setupApplicationInsights() {
     .setAutoCollectExceptions(true)
     .setAutoCollectDependencies(true)
     .setAutoCollectConsole(true, true)
-    .setSendLiveMetrics(false)
+    .setSendLiveMetrics(true)
     .start();
 
   if (appInsights.defaultClient) {
