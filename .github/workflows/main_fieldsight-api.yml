@@ -9,8 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -42,11 +40,12 @@ jobs:
         with:
           name: node-app
 
-      - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: 'fieldsight-api'
-          slot-name: 'Production'
-          username: ${{ secrets.AZURE_WEBAPP_USERNAME }}
-          password: ${{ secrets.AZURE_WEBAPP_PASSWORD }}
-          package: .
+      - name: Zip application
+        run: zip -r app.zip .
+
+      - name: Deploy via Kudu Zip Deploy
+        run: |
+          curl -X POST \
+            -u "${{ secrets.AZURE_WEBAPP_USERNAME }}:${{ secrets.AZURE_WEBAPP_PASSWORD }}" \
+            --data-binary @app.zip \
+            https://fieldsight-api-gaf0fndvbhg2fshs.scm.swedencentral-01.azurewebsites.net/api/zipdeploy
