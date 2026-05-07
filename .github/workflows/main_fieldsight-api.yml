@@ -12,27 +12,20 @@ jobs:
       name: production
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Create clean deployment zip
+      - name: Create deployment zip (clean snapshot)
         run: |
           zip -r app.zip . \
             -x "*.git*" \
             -x ".github/*" \
             -x "node_modules/*"
 
-      - name: Clean existing deployment
+      - name: Deploy via Azure ZipDeploy (clean overwrite)
         run: |
-          curl -X POST \
-            -u "${{ secrets.AZURE_WEBAPP_USERNAME }}:${{ secrets.AZURE_WEBAPP_PASSWORD }}" \
-            https://fieldsight-api-gaf0fndvbhg2fshs.scm.swedencentral-01.azurewebsites.net/api/command \
-            -H "Content-Type: application/json" \
-            -d '{"command":"rm -rf /home/site/wwwroot/*"}'
-
-      - name: Deploy via ZipDeploy
-        run: |
-          curl -X POST \
+          curl -i -X POST \
             -u "${{ secrets.AZURE_WEBAPP_USERNAME }}:${{ secrets.AZURE_WEBAPP_PASSWORD }}" \
             -H "Content-Type: application/zip" \
             --data-binary @app.zip \
-            https://fieldsight-api-gaf0fndvbhg2fshs.scm.swedencentral-01.azurewebsites.net/api/zipdeploy
+            "https://fieldsight-api-gaf0fndvbhg2fshs.scm.swedencentral-01.azurewebsites.net/api/zipdeploy?clean=true"
