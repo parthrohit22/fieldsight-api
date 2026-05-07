@@ -13,22 +13,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js version
+      - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '22.x'
 
-      - name: Install, build and test
-        run: |
-          npm install
-          npm run build --if-present
-          npm run test --if-present
+      - name: Install dependencies
+        run: npm install
 
-      - name: Upload artifact for deployment
+      - name: Build (if exists)
+        run: npm run build --if-present
+
+      - name: Test (if exists)
+        run: npm run test --if-present
+
+      - name: Prepare deployment folder
+        run: |
+          mkdir release
+          rsync -av --exclude='.git' --exclude='node_modules' ./ release/
+
+      - name: Upload deployment artifact
         uses: actions/upload-artifact@v4
         with:
-          name: node-app
-          path: .
+          name: release
+          path: release
 
   deploy:
     runs-on: ubuntu-latest
@@ -40,14 +48,19 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: node-app
+          name: release
+          path: release
 
-      - name: Zip application
-        run: zip -r app.zip .
+      - name: Create deployment zip
+        run: |
+          cd release
+          zip -r ../app.zip .
+          cd ..
 
-      - name: Deploy via Kudu Zip Deploy
+      - name: Deploy via Kudu Zip Deploy (clean)
         run: |
           curl -X POST \
             -u "${{ secrets.AZURE_WEBAPP_USERNAME }}:${{ secrets.AZURE_WEBAPP_PASSWORD }}" \
+            -H "Content-Type: application/zip" \
             --data-binary @app.zip \
-            https://fieldsight-api-gaf0fndvbhg2fshs.scm.swedencentral-01.azurewebsites.net/api/zipdeploy
+            https://fieldsight-api-gaf0fndvbhg2fshs.scm.swedencentral-01.azurewebsites.net/api/zipdeploy?isAsync=true
