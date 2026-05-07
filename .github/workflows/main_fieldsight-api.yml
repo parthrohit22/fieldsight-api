@@ -18,10 +18,18 @@ jobs:
         run: |
           zip -r app.zip . \
             -x "*.git*" \
-            -x "node_modules/*" \
-            -x ".github/*"
+            -x ".github/*" \
+            -x "node_modules/*"
 
-      - name: Deploy via Azure ZipDeploy
+      - name: Clean existing deployment
+        run: |
+          curl -X POST \
+            -u "${{ secrets.AZURE_WEBAPP_USERNAME }}:${{ secrets.AZURE_WEBAPP_PASSWORD }}" \
+            https://fieldsight-api-gaf0fndvbhg2fshs.scm.swedencentral-01.azurewebsites.net/api/command \
+            -H "Content-Type: application/json" \
+            -d '{"command":"rm -rf /home/site/wwwroot/*"}'
+
+      - name: Deploy via ZipDeploy
         run: |
           curl -X POST \
             -u "${{ secrets.AZURE_WEBAPP_USERNAME }}:${{ secrets.AZURE_WEBAPP_PASSWORD }}" \
