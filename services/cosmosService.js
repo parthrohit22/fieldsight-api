@@ -49,10 +49,25 @@ export async function createRecord(record) {
   return resource;
 }
 
-export async function getAllRecords() {
+export async function getAllRecords(filters = {}) {
+  const conditions = [];
+  const parameters = [];
+
+  if (filters.projectID) {
+    conditions.push("c.projectID = @projectID");
+    parameters.push({ name: "@projectID", value: filters.projectID });
+  }
+
+  if (filters.category) {
+    conditions.push("c.category = @category");
+    parameters.push({ name: "@category", value: filters.category });
+  }
+
+  const whereClause = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
   const { resources } = await getContainer()
     .items.query({
-      query: "SELECT * FROM c",
+      query: `SELECT c.id, c.projectID, c.category, c.researcherID, c.captureTimestamp, c.file FROM c${whereClause}`,
+      parameters,
     }, {
       enableCrossPartitionQuery: true,
     })

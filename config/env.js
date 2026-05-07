@@ -28,7 +28,26 @@ function numberFromEnv(name, defaultValue) {
   return value;
 }
 
+function getStorageAccountName(connectionString) {
+  const accountNamePart = connectionString
+    .split(";")
+    .find((part) => part.trim().startsWith("AccountName="));
+
+  if (!accountNamePart) {
+    throw new Error("AZURE_STORAGE_CONNECTION_STRING must include AccountName");
+  }
+
+  const accountName = accountNamePart.split("=").slice(1).join("=").trim();
+
+  if (!accountName) {
+    throw new Error("AZURE_STORAGE_CONNECTION_STRING must include a non-empty AccountName");
+  }
+
+  return accountName;
+}
+
 const cosmosPartitionKey = process.env.COSMOS_PARTITION_KEY || "/projectID";
+const storageConnectionString = required("AZURE_STORAGE_CONNECTION_STRING");
 
 if (cosmosPartitionKey !== "/projectID") {
   throw new Error("COSMOS_PARTITION_KEY must be /projectID");
@@ -50,7 +69,8 @@ const config = Object.freeze({
     partitionKey: cosmosPartitionKey,
   }),
   storage: Object.freeze({
-    connectionString: required("AZURE_STORAGE_CONNECTION_STRING"),
+    connectionString: storageConnectionString,
+    accountName: getStorageAccountName(storageConnectionString),
     containerName: process.env.AZURE_STORAGE_CONTAINER_NAME || "imagestore",
   }),
 });

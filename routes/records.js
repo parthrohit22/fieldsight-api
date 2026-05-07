@@ -1,6 +1,7 @@
 import express from "express";
 import { v4 as uuidv4 } from "uuid";
 
+import config from "../config/env.js";
 import { AppError } from "../middleware/errorHandler.js";
 import { deleteBlob, uploadBlob } from "../services/blobService.js";
 import {
@@ -41,6 +42,44 @@ function rejectUnsupportedFields(body, allowedFields) {
   }
 }
 
+function optionalQueryString(query, fieldName) {
+  const value = query[fieldName];
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new AppError(`${fieldName} must be a non-empty string`, 400, "INVALID_QUERY");
+  }
+
+  return value.trim();
+}
+
+function buildBlobUrl(blobPath) {
+  if (!blobPath) {
+    return null;
+  }
+
+  const normalizedBlobPath = blobPath.startsWith("/") ? blobPath.slice(1) : blobPath;
+  const publicBlobPath = `/${config.storage.containerName}/${normalizedBlobPath}`;
+  return `https://${config.storage.accountName}.blob.core.windows.net${publicBlobPath}`;
+}
+
+function formatRecordResponse(record) {
+  return {
+    id: record.id,
+    projectID: record.projectID,
+    category: record.category,
+    researcherID: record.researcherID,
+    captureTimestamp: record.captureTimestamp,
+    file: {
+      name: record.file?.name ?? null,
+      blobUrl: buildBlobUrl(record.file?.blobPath),
+    },
+  };
+}
+
 router.post("/upload", async (req, res) => {
   requireBodyObject(req.body);
 
@@ -79,8 +118,12 @@ router.post("/upload", async (req, res) => {
 });
 
 router.get("/records", async (req, res) => {
-  const records = await getAllRecords();
-  return res.status(200).json(records);
+  const filters = {
+    projectID: optionalQueryString(req.query, "projectID"),
+    category: optionalQueryString(req.query, "category"),
+  };
+  const records = await getAllRecords(filters);
+  return res.status(200).json(records.map(formatRecordResponse));
 });
 
 router.delete("/records/:id", async (req, res) => {
