@@ -8,24 +8,27 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: production
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Create deployment zip (clean snapshot)
+      - name: Show files before zipping
+        run: ls -la
+
+      - name: Create deployment zip
         run: |
           zip -r app.zip . \
             -x "*.git*" \
             -x ".github/*" \
             -x "node_modules/*"
 
-      - name: Deploy via Azure ZipDeploy (clean overwrite)
+      - name: Show zip contents
+        run: unzip -l app.zip
+
+      - name: Deploy to Azure
         run: |
-          curl -i -X POST \
+          curl -X POST \
             -u "${{ secrets.AZURE_WEBAPP_USERNAME }}:${{ secrets.AZURE_WEBAPP_PASSWORD }}" \
             -H "Content-Type: application/zip" \
             --data-binary @app.zip \
-            "https://fieldsight-api-gaf0fndvbhg2fshs.scm.swedencentral-01.azurewebsites.net/api/zipdeploy?clean=true"
+            https://fieldsight-api-gaf0fndvbhg2fshs.scm.swedencentral-01.azurewebsites.net/api/zipdeploy
