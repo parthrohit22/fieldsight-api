@@ -15,6 +15,7 @@ function getContainer() {
       .database(config.cosmos.databaseId)
       .container(config.cosmos.containerId);
   }
+
   return container;
 }
 
@@ -26,6 +27,8 @@ function stripSystemFields(record) {
   const { _rid, _self, _etag, _attachments, _ts, ...document } = record;
   return document;
 }
+
+/* ================= INITIALIZE ================= */
 
 export async function initializeCosmos() {
   const { database } = await client.databases.createIfNotExists({
@@ -55,6 +58,7 @@ export async function createRecord(record) {
   const { resource } = await getContainer().items.create(
     stripSystemFields(record)
   );
+
   return resource;
 }
 
@@ -69,78 +73,119 @@ export async function getAllRecords(
 
   if (filters.projectID) {
     conditions.push("c.projectID = @projectID");
-    parameters.push({ name: "@projectID", value: filters.projectID });
+    parameters.push({
+      name: "@projectID",
+      value: filters.projectID,
+    });
   }
 
   if (filters.category) {
     conditions.push("c.category = @category");
-    parameters.push({ name: "@category", value: filters.category });
+    parameters.push({
+      name: "@category",
+      value: filters.category,
+    });
   }
 
   if (filters.researcherID) {
     conditions.push("c.researcherID = @researcherID");
-    parameters.push({ name: "@researcherID", value: filters.researcherID });
+    parameters.push({
+      name: "@researcherID",
+      value: filters.researcherID,
+    });
   }
 
   const whereClause = conditions.length
     ? ` WHERE ${conditions.join(" AND ")}`
     : "";
 
-  parameters.push({ name: "@offset", value: pagination.offset });
-  parameters.push({ name: "@limit", value: pagination.limit });
-
   const query = `
-    SELECT c.id, c.projectID, c.category, c.researcherID, 
-           c.captureTimestamp, c.file
+    SELECT
+      c.id,
+      c.projectID,
+      c.category,
+      c.researcherID,
+      c.captureTimestamp,
+      c.file
     FROM c
     ${whereClause}
-    OFFSET @offset LIMIT @limit
   `;
 
   const { resources } = await getContainer()
     .items.query(
-      { query, parameters },
-      { enableCrossPartitionQuery: true }
+      {
+        query,
+        parameters,
+      },
+      {
+        enableCrossPartitionQuery: true,
+        maxItemCount: pagination.limit + pagination.offset,
+      }
     )
     .fetchAll();
 
-  return resources;
+  return resources.slice(
+    pagination.offset,
+    pagination.offset + pagination.limit
+  );
 }
 
-/* ================= GET SINGLE (PARTITION SAFE) ================= */
+/* ================= GET SINGLE ================= */
 
 export async function getRecord(id, projectID) {
   try {
-    const { resource } = await getContainer().item(id, projectID).read();
+    const { resource } = await getContainer()
+      .item(id, projectID)
+      .read();
 
     if (!resource) {
-      throw new AppError("Record not found", 404, "RECORD_NOT_FOUND");
+      throw new AppError(
+        "Record not found",
+        404,
+        "RECORD_NOT_FOUND"
+      );
     }
 
     return resource;
   } catch (error) {
     if (isNotFound(error)) {
-      throw new AppError("Record not found", 404, "RECORD_NOT_FOUND");
+      throw new AppError(
+        "Record not found",
+        404,
+        "RECORD_NOT_FOUND"
+      );
     }
+
     throw error;
   }
 }
 
-/* ================= FIND BY ID (CROSS PARTITION) ================= */
+/* ================= FIND BY ID ================= */
 
 export async function findRecordById(id) {
   const { resources } = await getContainer()
     .items.query(
       {
         query: "SELECT * FROM c WHERE c.id = @id",
-        parameters: [{ name: "@id", value: id }],
+        parameters: [
+          {
+            name: "@id",
+            value: id,
+          },
+        ],
       },
-      { enableCrossPartitionQuery: true }
+      {
+        enableCrossPartitionQuery: true,
+      }
     )
     .fetchAll();
 
   if (!resources.length) {
-    throw new AppError("Record not found", 404, "RECORD_NOT_FOUND");
+    throw new AppError(
+      "Record not found",
+      404,
+      "RECORD_NOT_FOUND"
+    );
   }
 
   return resources[0];
@@ -157,15 +202,18 @@ export async function updateRecord(id, updates) {
     id: existingRecord.id,
   });
 
-  // Partition key change
+  // Partition key changed
   if (
     updates.projectID &&
     updates.projectID !== existingRecord.projectID
   ) {
-    const { resource } = await getContainer().items.create(updatedRecord);
+    const { resource } = await getContainer()
+      .items.create(updatedRecord);
+
     await getContainer()
       .item(id, existingRecord.projectID)
       .delete();
+
     return resource;
   }
 
@@ -180,11 +228,18 @@ export async function updateRecord(id, updates) {
 
 export async function deleteRecord(id, projectID) {
   try {
-    await getContainer().item(id, projectID).delete();
+    await getContainer()
+      .item(id, projectID)
+      .delete();
   } catch (error) {
     if (isNotFound(error)) {
-      throw new AppError("Record not found", 404, "RECORD_NOT_FOUND");
+      throw new AppError(
+        "Record not found",
+        404,
+        "RECORD_NOT_FOUND"
+      );
     }
+
     throw error;
   }
 }
