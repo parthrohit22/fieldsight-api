@@ -18,19 +18,19 @@ jobs:
         with:
           node-version: '22.x'
 
-      - name: Install dependencies
+      - name: Install dependencies (clean)
         run: npm ci
 
       - name: Run tests (if present)
         run: npm run test --if-present
 
-      - name: Create clean release directory
+      - name: Prepare release folder
         run: |
           mkdir release
           rsync -av \
             --exclude='.git' \
             --exclude='.github' \
-            --exclude='node_modules/.cache' \
+            --exclude='node_modules' \
             ./ release/
 
       - name: Install production dependencies
@@ -38,7 +38,7 @@ jobs:
           cd release
           npm ci --omit=dev
 
-      - name: Zip release artifact
+      - name: Create deployment zip
         run: |
           cd release
           zip -r ../app.zip .
@@ -58,8 +58,7 @@ jobs:
       name: production
 
     steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: production-package
 
