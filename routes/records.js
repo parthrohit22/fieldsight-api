@@ -57,13 +57,13 @@ function optionalQueryString(query, fieldName) {
 }
 
 function buildBlobUrl(blobPath) {
-  if (!blobPath) {
-    return null;
-  }
+  if (!blobPath) return null;
 
-  const normalizedBlobPath = blobPath.startsWith("/") ? blobPath.slice(1) : blobPath;
-  const publicBlobPath = `/${config.storage.containerName}/${normalizedBlobPath}`;
-  return `https://${config.storage.accountName}.blob.core.windows.net${publicBlobPath}`;
+  const normalized = blobPath.startsWith("/")
+    ? blobPath.slice(1)
+    : blobPath;
+
+  return `https://${config.storage.accountName}.blob.core.windows.net/${normalized}`;
 }
 
 function formatRecordResponse(record) {
