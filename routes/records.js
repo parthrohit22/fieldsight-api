@@ -63,7 +63,8 @@ function buildBlobUrl(blobPath) {
     ? blobPath.slice(1)
     : blobPath;
 
-  return `https://${config.storage.accountName}.blob.core.windows.net/${normalized}`;
+  return `https://${config.storage.accountName}.blob.core.windows.net/${config.storage.containerName}/${normalized}`;
+}
 }
 
 function formatRecordResponse(record) {
