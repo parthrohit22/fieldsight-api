@@ -1,0 +1,33 @@
+{
+  "name": "fieldsight-api",
+  "version": "1.0.0",
+  "description": "Production Express API for the FieldSight multimedia sharing platform.",
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --check server.js && node --check config/env.js && node --check services/cosmosService.js && node --check services/blobService.js && node --check routes/records.js && node --check middleware/auth.js && node --check middleware/errorHandler.js"
+  },
+  "keywords": [
+    "azure",
+    "cosmos-db",
+    "blob-storage",
+    "express",
+    "fieldsight"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@azure/cosmos": "4.4.1",
+    "@azure/storage-blob": "12.27.0",
+    "applicationinsights": "3.14.0",
+    "cors": "2.8.6",
+    "dotenv": "17.4.2",
+    "express": "5.2.1",
+    "mime-types": "3.0.2",
+    "uuid": "14.0.0"
+  }
+}
